@@ -19,6 +19,12 @@ import { SettingsView } from './components/SettingsView';
 import { ComparePerspectivesModal } from './components/ComparePerspectivesModal';
 import { LoginPage } from './components/LoginPage';
 import { getSavedProfiles, saveProfiles } from './data/investorProfiles';
+import {
+  STOCK_REGISTRY,
+  generateDeterministicOHLCV,
+  getMarketQuote,
+  getMarketIndices,
+} from './utils/marketData';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
@@ -101,38 +107,59 @@ export default function App() {
   const fetchLiveIndicesData = useCallback(async () => {
     try {
       const res = await fetch('/api/market/indices');
-      if (res.ok) {
+      const isJson = (res.headers.get('content-type') || '').includes('application/json');
+      if (res.ok && isJson) {
         const data = await res.json();
         setIndices(data);
+        return;
       }
+      throw new Error('Indices API unavailable');
     } catch (e) {
-      console.warn('Failed to fetch live indices:', e);
+      console.warn('Failed to fetch live indices, using built-in data:', e);
+      setIndices(prev => (prev.nifty50 ? prev : { ...prev, ...getMarketIndices() }));
     }
   }, []);
 
   // Fetch Live Quote & Historical Series
   const fetchSymbolData = useCallback(async (sym: string) => {
+    const clean = sym.toUpperCase();
+    const isJson = (r: Response) => (r.headers.get('content-type') || '').includes('application/json');
+    let gotHistory = false;
+    let gotQuote = false;
+
     try {
-      const clean = sym.toUpperCase();
       const [quoteRes, histRes] = await Promise.all([
         fetch(`/api/market/quote/${clean}`),
         fetch(`/api/market/history/${clean}?range=3mo`),
       ]);
 
-      if (quoteRes.ok) {
+      if (quoteRes.ok && isJson(quoteRes)) {
         const qData: MarketRecord = await quoteRes.json();
         setCurrentQuote(qData);
         setLivePriceMap(prev => ({ ...prev, [clean]: qData.close }));
+        gotQuote = true;
       }
 
-      if (histRes.ok) {
+      if (histRes.ok && isJson(histRes)) {
         const hData = await histRes.json();
         if (Array.isArray(hData.history) && hData.history.length > 0) {
           setHistory(hData.history);
+          gotHistory = true;
         }
       }
     } catch (e) {
       console.warn('Error fetching live symbol data:', e);
+    }
+
+    // Fallback: no backend reachable (e.g. static hosting) -> use built-in data so charts still render
+    if (!gotHistory) {
+      const cfg = STOCK_REGISTRY[clean] || STOCK_REGISTRY['RELIANCE'];
+      setHistory(generateDeterministicOHLCV(cfg, 60));
+    }
+    if (!gotQuote) {
+      const q = getMarketQuote(clean);
+      setCurrentQuote(q);
+      setLivePriceMap(prev => ({ ...prev, [clean]: q.close }));
     }
   }, []);
 
