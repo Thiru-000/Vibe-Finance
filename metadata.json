@@ -1,0 +1,6 @@
+{
+  "name": "VibeFinance — Autonomous Financial Intelligence",
+  "description": "Multi-agent autonomous financial intelligence platform for Indian retail investors with parallel AI agents, RAG research, and personalized risk analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
